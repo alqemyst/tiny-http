@@ -29,7 +29,7 @@ Add this to the `Cargo.toml` file of your project:
 
 ```toml
 [dependencies]
-tiny_http = "0.6"
+tiny_http = { git = "https://github.com/alqemyst/tiny-http.git" }
 ```
 
 Don't forget to add the external crate:
