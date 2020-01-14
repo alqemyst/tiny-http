@@ -42,7 +42,7 @@ pub struct Response<R> where R: Read {
 }
 
 /// A `Response` without a template parameter.
-pub type ResponseBox = Response<Box<Read + Send>>;
+pub type ResponseBox = Response<Box<dyn Read + Send>>;
 
 /// Transfer encoding to use when sending the message.
 /// Note that only *supported* encoding are listed here.
@@ -77,23 +77,23 @@ fn write_message_header<W>(mut writer: W, http_version: &HTTPVersion,
                            -> IoResult<()> where W: Write
 {
     // writing status line
-    try!(write!(&mut writer, "HTTP/{}.{} {} {}\r\n",
+    write!(&mut writer, "HTTP/{}.{} {} {}\r\n",
         http_version.0,
         http_version.1,
         status_code.0,
         status_code.default_reason_phrase()
-    ));
+    )?;
 
     // writing headers
     for header in headers.iter() {
-        try!(writer.write_all(header.field.as_str().as_ref()));
-        try!(write!(&mut writer, ": "));
-        try!(writer.write_all(header.value.as_str().as_ref()));
-        try!(write!(&mut writer, "\r\n"));
+        writer.write_all(header.field.as_str().as_ref())?;
+        write!(&mut writer, ": ")?;
+        writer.write_all(header.value.as_str().as_ref())?;
+        write!(&mut writer, "\r\n")?;
     }
 
     // separator between header and data
-    try!(write!(&mut writer, "\r\n"));
+    write!(&mut writer, "\r\n")?;
 
     Ok(())
 }
@@ -309,21 +309,21 @@ impl<R> Response<R> where R: Read {
         // we don't know it, we buffer the entire response first here
         // while this is an expensive operation, it is only ever needed for clients using HTTP 1.0
         let (mut reader, data_length) = match (self.data_length, transfer_encoding) {
-            (Some(l), _) => (Box::new(self.reader) as Box<Read>, Some(l)),
+            (Some(l), _) => (Box::new(self.reader) as Box<dyn Read>, Some(l)),
             (None, Some(TransferEncoding::Identity)) => {
                 let mut buf = Vec::new();
-                try!(self.reader.read_to_end(&mut buf));
+                self.reader.read_to_end(&mut buf)?;
                 let l = buf.len();
-                (Box::new(Cursor::new(buf)) as Box<Read>, Some(l))
+                (Box::new(Cursor::new(buf)) as Box<dyn Read>, Some(l))
             },
-            _ => (Box::new(self.reader) as Box<Read>, None),
+            _ => (Box::new(self.reader) as Box<dyn Read>, None),
         };
 
         // checking whether to ignore the body of the response
         let do_not_send_body = do_not_send_body ||
             match self.status_code.0 {
                 // sattus code 1xx, 204 and 304 MUST not include a body
-                100...199 | 204 | 304 => true,
+                100..=199 | 204 | 304 => true,
                 _ => false
             };
 
@@ -348,8 +348,8 @@ impl<R> Response<R> where R: Read {
         };
 
         // sending headers
-        try!(write_message_header(writer.by_ref(), &http_version,
-            &self.status_code, &self.headers));
+        write_message_header(writer.by_ref(), &http_version,
+            &self.status_code, &self.headers)?;
 
         // sending the body
         if !do_not_send_body {
@@ -359,7 +359,7 @@ impl<R> Response<R> where R: Read {
                     use chunked_transfer::Encoder;
 
                     let mut writer = Encoder::new(writer);
-                    try!(io::copy(&mut reader, &mut writer));
+                    io::copy(&mut reader, &mut writer)?;
                 },
 
                 Some(TransferEncoding::Identity) => {
@@ -371,7 +371,7 @@ impl<R> Response<R> where R: Read {
                     if data_length >= 1 {
                         let (mut equ_reader, _) =
                             EqualReader::new(reader.by_ref(), data_length);
-                        try!(io::copy(&mut equ_reader, &mut writer));
+                        io::copy(&mut equ_reader, &mut writer)?;
                     }
                 },
 
@@ -388,7 +388,7 @@ impl<R> Response<R> where R: Read + Send + 'static {
     /// Turns this response into a `Response<Box<Read + Send>>`.
     pub fn boxed(self) -> ResponseBox {
         Response {
-            reader: Box::new(self.reader) as Box<Read + Send>,
+            reader: Box::new(self.reader) as Box<dyn Read + Send>,
             status_code: self.status_code,
             headers: self.headers,
             data_length: self.data_length,

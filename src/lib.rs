@@ -196,7 +196,7 @@ pub struct SslConfig {
 impl Server {
     /// Shortcut for a simple server on a specific address.
     #[inline]
-    pub fn http<A>(addr: A) -> Result<Server, Box<Error + Send + Sync + 'static>>
+    pub fn http<A>(addr: A) -> Result<Server, Box<dyn Error + Send + Sync + 'static>>
         where A: ToSocketAddrs
     {
         Server::new(ServerConfig {
@@ -219,7 +219,7 @@ impl Server {
     }
 
     /// Builds a new server that listens on the specified address.
-    pub fn new<A>(config: ServerConfig<A>) -> Result<Server, Box<Error + Send + Sync + 'static>>
+    pub fn new<A>(config: ServerConfig<A>) -> Result<Server, Box<dyn Error + Send + Sync + 'static>>
         where A: ToSocketAddrs
     {
         // building the "close" variable
@@ -227,8 +227,8 @@ impl Server {
 
         // building the TcpListener
         let (server, local_addr) = {
-            let listener = try!(net::TcpListener::bind(config.addr));
-            let local_addr = try!(listener.local_addr());
+            let listener = net::TcpListener::bind(config.addr)?;
+            let local_addr = listener.local_addr()?;
             debug!("Server listening on {}", local_addr);
             (listener, local_addr)
         };
@@ -246,14 +246,14 @@ impl Server {
                 use openssl::pkey::PKey;
                 use openssl::ssl::SslVerifyMode;
 
-                let mut ctxt = try!(SslContext::builder(ssl::SslMethod::tls()));
-                try!(ctxt.set_cipher_list("DEFAULT"));
-                let certificate = try!(X509::from_pem(&config.certificate[..]));
-                try!(ctxt.set_certificate(&certificate));
-                let private_key = try!(PKey::private_key_from_pem(&config.private_key[..]));
-                try!(ctxt.set_private_key(&private_key));
+                let mut ctxt = SslContext::builder(ssl::SslMethod::tls())?;
+                ctxt.set_cipher_list("DEFAULT")?;
+                let certificate = X509::from_pem(&config.certificate[..])?;
+                ctxt.set_certificate(&certificate)?;
+                let private_key = PKey::private_key_from_pem(&config.private_key[..])?;
+                ctxt.set_private_key(&private_key)?;
                 ctxt.set_verify(SslVerifyMode::NONE);
-                try!(ctxt.check_private_key());
+                ctxt.check_private_key()?;
 
                 // let's wipe the certificate and private key from memory, because we're
                 // better safe than sorry
